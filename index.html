@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>FindMyWay</title>
+<style>
+:root{
+  --bg:#f4f9f8; --panel:#ffffff; --ink:#14282a; --sub:#4a5f61;
+  --accent:#026a78; --on-accent:#ffffff; --accent2:#b4531b; --line:#c9dcda;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0e1819; --panel:#162426; --ink:#eef6f5; --sub:#a9bfc0;
+    --accent:#4fc3ad; --on-accent:#06201c; --accent2:#f0a068; --line:#2c4446;
+  }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:1.05rem/1.55 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right))
+          max(24px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left));
+}
+.wrap{max-width:640px; margin:0 auto}
+.skip{position:absolute; left:-999px; top:0}
+.skip:focus{left:16px; top:16px; background:var(--panel); color:var(--ink); padding:10px 14px; border-radius:8px; z-index:10}
+.sr{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap}
+header{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:14px}
+.brand{font-weight:800; letter-spacing:.02em; color:var(--accent); margin:0}
+.place{color:var(--sub); font-size:.9rem; margin:0}
+.card{background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px 20px; margin-bottom:16px}
+.eyebrow{margin:0 0 6px; color:var(--accent2); font-weight:700; font-size:.85rem; letter-spacing:.05em; text-transform:uppercase}
+h1{font-size:1.6rem; line-height:1.25; margin:0 0 12px}
+h2{font-size:1.15rem; margin:0 0 10px}
+p{margin:0 0 12px}
+.big{font-size:1.3rem; line-height:1.5; font-weight:600}
+.muted{color:var(--sub)}
+ul.choices{list-style:none; margin:0; padding:0; display:grid; gap:10px}
+button, .btn{
+  font:inherit; font-weight:700; width:100%; min-height:56px; padding:12px 18px;
+  border-radius:12px; border:2px solid var(--accent); background:var(--accent); color:var(--on-accent);
+  cursor:pointer; text-align:left;
+}
+button.secondary{background:transparent; color:var(--ink); border-color:var(--line)}
+button.choice{background:var(--panel); color:var(--ink); border-color:var(--accent)}
+button:focus-visible, summary:focus-visible, select:focus-visible{outline:4px solid var(--accent2); outline-offset:2px}
+.row{display:grid; gap:10px; margin-top:14px}
+details{margin-top:14px}
+summary{cursor:pointer; font-weight:700; min-height:44px; display:flex; align-items:center}
+ol.steps{padding-left:1.3em; margin:8px 0 0}
+ol.steps li{margin-bottom:12px}
+select{font:inherit; width:100%; min-height:52px; border-radius:12px; border:2px solid var(--line); background:var(--panel); color:var(--ink); padding:0 12px; margin-bottom:10px}
+.help{margin-top:14px}
+.help:empty{display:none}
+figure{margin:18px 0 0}
+figcaption{font-size:.85rem; color:var(--sub); margin-top:6px}
+svg.map{width:100%; height:auto; display:block; background:var(--bg); border-radius:12px; border:1px solid var(--line)}
+.link{stroke:var(--line); stroke-width:1.4}
+.link.route{stroke:var(--accent); stroke-width:2.6}
+.node{fill:var(--panel); stroke:var(--sub); stroke-width:1}
+.node.route{stroke:var(--accent); stroke-width:1.6}
+.node.here{fill:var(--accent); stroke:var(--accent)}
+.node.dest{fill:var(--accent2); stroke:var(--accent2)}
+.lbl{font:3.6px system-ui,sans-serif; fill:var(--ink)}
+footer{color:var(--sub); font-size:.85rem; margin-top:8px}
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to main content</a>
+<div class="wrap">
+  <header>
+    <p class="brand">FindMyWay</p>
+    <p class="place" id="place"></p>
+  </header>
+  <main id="main"><div id="app"></div></main>
+  <div id="live" class="sr" role="status" aria-live="polite"></div>
+  <noscript><div class="card"><p>This page needs JavaScript to give directions.</p></div></noscript>
+  <footer>
+    <p>No account and no tracking code. Your chosen destination is saved on this phone only. A copy of this page is also saved on the phone so it can open with weak signal.</p>
+    <details>
+      <summary>Test mode (no tag needed)</summary>
+      <label for="testTag">Pretend I just tapped this tag:</label>
+      <select id="testTag"></select>
+      <button type="button" id="testGo" class="secondary">Pretend I tapped it</button>
+      <p id="offlineStatus" class="muted" role="status"></p>
+    </details>
+  </footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================
+   1. EDIT THIS SECTION TO MATCH YOUR REAL BUILDING AND TAG PLACEMENTS
+   ---------------------------------------------------------------------
+   The sample data below is an EXAMPLE campus route: library, lift,
+   classroom 1, classroom 2. The step counts and turns are ILLUSTRATIVE
+   (written for campus-sized distances, not measured on a real floor plan).
+   For the roadshow the four tags sit in one room and the walk between
+   them is simulated. Do not present these numbers as measured results.
+
+   NODES: one per NFC tag. The key (e.g. LIFT_G) is the ID written in
+          that tag's URL:   https://YOUR-SITE/?here=LIFT_G
+     name : full spoken name
+     short: short label for the little map
+     dest : true if people can choose it as a destination
+     aka  : other ways someone might say it (used by voice input)
+     tag  : where the tag is, spoken as "The next tag is <tag>."
+     x, y : map position (0-100), lab: label side b/t/l/r
+   LINKS: a walkable connection between two tags.
+     m  : distance in metres (used to pick the shortest route)
+     ab : spoken directions from a to b
+     ba : spoken directions from b to a (turns are mirrored!)
+   CONFIG.closed: tag IDs to route around (lift out of service, etc.)
+   CONFIG.help  : last line of the "I can't find it" message (add a real contact)
+
+   WORDING STYLE (important for people who cannot see): every instruction
+   starts with "Face the tag" (tags are on walls, so a tap means you face
+   that wall), uses things you can feel (wall, handrail, door frame), counts
+   steps instead of metres, and ends with a feel check. Turns mirror between
+   the two directions of a link.
+   ===================================================================== */
+var CONFIG = {
+  name: 'Example campus route',
+  help: 'If you are still stuck, ask someone nearby for help or call [add a help phone number].',
+  closed: []
+};
+
+var NODES = {
+  LIBRARY: { name:'Library', short:'Library', dest:true, x:12, y:50, lab:'b',
+    aka:['library','the library'],
+    tag:'on the wall to the right of the library doors, at hand height, with a raised dot beside it' },
+  LIFT:    { name:'Lift', short:'Lift', dest:true, x:38, y:50, lab:'b',
+    aka:['lift','the lift','elevator'],
+    tag:'on the wall beside the lift call buttons, at hand height, with a raised dot beside it' },
+  CLASS1:  { name:'Classroom 1', short:'Classroom 1', dest:true, x:64, y:50, lab:'b',
+    aka:['classroom 1','classroom one','class 1','room 1','room one'],
+    tag:'on the door frame at hand height, with a raised dot beside it' },
+  CLASS2:  { name:'Classroom 2', short:'Classroom 2', dest:true, x:88, y:50, lab:'b',
+    aka:['classroom 2','classroom two','class 2','room 2','room two'],
+    tag:'on the door frame at hand height, with a raised dot beside it' }
+};
+
+var LINKS = [
+  { a:'LIBRARY', b:'LIFT', m:30,
+    ab:'Face the tag. Turn right and walk with the wall on your left hand for about 40 steps. You should feel the wall the whole way. The lift lobby is where the wall ends. If you lose the wall, stop and go back to the tag.',
+    ba:'Face the tag. Turn left and walk with the wall on your right hand for about 40 steps. You should feel the wall the whole way. The library doors are where the wall ends. If you lose the wall, stop and go back to the tag.' },
+  { a:'LIFT', b:'CLASS1', m:30,
+    ab:'Face the tag. The lift doors are about 3 steps to your left. Press the call button, take the lift up and press 3. When the doors open, step out and turn left. Walk with the wall on your right hand for about 25 steps. You should feel the wall the whole way. Classroom 1 is where the wall ends. If you lose the wall, stop and go back to the lift.',
+    ba:'Face the tag. Turn right and walk with the wall on your left hand for about 25 steps. You should feel the wall the whole way. The lift lobby is where the wall ends. Press the call button, take the lift down and press 1. When the doors open, step out. If you lose the wall, stop and go back to the tag.' },
+  { a:'CLASS1', b:'CLASS2', m:15,
+    ab:'Face the tag. Turn right and walk with the wall on your left hand for about 20 steps. You should feel one door frame, then a second. Classroom 2 is the second one. If you lose the wall, stop and go back to the tag.',
+    ba:'Face the tag. Turn left and walk with the wall on your right hand for about 20 steps. You should feel one door frame, then a second. Classroom 1 is the second one. If you lose the wall, stop and go back to the tag.' }
+];
+/* ================= end of the section you need to edit ================= */
+
+
+/* ---------- 2. Routing (shortest path over the tag graph) ---------- */
+var adj = {};
+Object.keys(NODES).forEach(function(k){ adj[k] = []; });
+LINKS.forEach(function(l){
+  adj[l.a].push({ to:l.b, m:l.m, say:l.ab });
+  adj[l.b].push({ to:l.a, m:l.m, say:l.ba });
+});
+
+function isClosed(id){ return CONFIG.closed.indexOf(id) !== -1; }
+
+function findRoute(from, to){
+  if(!NODES[from] || !NODES[to] || isClosed(to)) return null;
+  var dist = {}, prev = {}, done = {};
+  Object.keys(NODES).forEach(function(k){ dist[k] = Infinity; });
+  dist[from] = 0;
+  while(true){
+    var u = null, best = Infinity;
+    for(var k in dist){ if(!done[k] && dist[k] < best){ best = dist[k]; u = k; } }
+    if(u === null || u === to) break;
+    done[u] = true;
+    adj[u].forEach(function(e){
+      if(isClosed(e.to)) return;
+      var alt = dist[u] + e.m;
+      if(alt < dist[e.to]){ dist[e.to] = alt; prev[e.to] = u; }
+    });
+  }
+  if(dist[to] === Infinity) return null;
+  var path = [to];
+  while(path[0] !== from){ path.unshift(prev[path[0]]); }
+  return path;
+}
+
+function routeSteps(path){
+  var steps = [];
+  for(var i = 0; i < path.length - 1; i++){
+    var e = adj[path[i]].filter(function(x){ return x.to === path[i+1]; })[0];
+    steps.push({ from:path[i], to:path[i+1], say:e.say, m:e.m });
+  }
+  return steps;
+}
+
+/* ---------- 3. Small helpers ---------- */
+function h(tag, props){
+  var e = document.createElement(tag);
+  if(props){ for(var k in props){
+    if(k === 'class') e.className = props[k];
+    else if(k.indexOf('on') === 0) e.addEventListener(k.slice(2), props[k]);
+    else e.setAttribute(k, props[k]);
+  } }
+  for(var i = 2; i < arguments.length; i++){
+    var c = arguments[i];
+    if(c === null || c === undefined || c === false) continue;
+    e.appendChild(c.nodeType ? c : document.createTextNode(String(c)));
+  }
+  return e;
+}
+function store(k, v){ try{ if(v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); }catch(e){} }
+function load(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }
+
+var app = document.getElementById('app');
+var live = document.getElementById('live');
+function announce(text){
+  live.textContent = '';
+  setTimeout(function(){ live.textContent = text; }, 350);
+}
+function showHelp(here, box){
+  var text = 'Stay where you are for a moment. Your last tag is ' + here.tag +
+    '. Go back to it the way you came, tap it again, and listen to the steps once more. ' +
+    (CONFIG.help || 'Ask someone nearby for help.');
+  box.textContent = '';
+  box.appendChild(h('p', { 'class':'big' }, text));
+  announce(text);
+}
+function speak(text){
+  if(!('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  var u = new SpeechSynthesisUtterance(text);
+  u.rate = 0.95;
+  if(navigator.language) u.lang = navigator.language;
+  window.speechSynthesis.speak(u);
+}
+
+/* ---------- 4. State ---------- */
+var params = new URLSearchParams(location.search);
+var state = {
+  here: (params.get('here') || '').toUpperCase(),
+  dest: (params.get('to') || load('fmw_dest') || '').toUpperCase()
+};
+if(params.get('to') && NODES[state.dest]) store('fmw_dest', state.dest);
+
+function chooseDest(id){ state.dest = id; store('fmw_dest', id); render(); }
+function clearDest(){ state.dest = ''; store('fmw_dest', null); render(); }
+
+/* ---------- 5. Voice input (optional; buttons are the main way) ---------- */
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+function norm(s){ return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim(); }
+
+function matchDest(alts){
+  var bestId = null, bestLen = 0;
+  alts.forEach(function(a){
+    var t = norm(a);
+    Object.keys(NODES).forEach(function(id){
+      var n = NODES[id];
+      if(!n.dest || id === state.here || isClosed(id)) return;
+      [n.name].concat(n.aka || []).forEach(function(alias){
+        var q = norm(alias);
+        if(q && t.indexOf(q) !== -1 && q.length > bestLen){ bestLen = q.length; bestId = id; }
+      });
+    });
+  });
+  return bestId;
+}
+
+function listen(setStatus){
+  var rec;
+  try{ rec = new SR(); }catch(e){ setStatus('Voice input is not available here. Please choose from the list.'); return; }
+  rec.lang = navigator.language || 'en-AU';
+  rec.interimResults = false;
+  rec.maxAlternatives = 3;
+  setStatus('Listening. Say where you want to go.');
+  rec.onresult = function(ev){
+    var alts = [];
+    for(var i = 0; i < ev.results[0].length; i++) alts.push(ev.results[0][i].transcript);
+    var id = matchDest(alts);
+    if(id) chooseDest(id);
+    else setStatus('I heard "' + alts[0] + '" but did not recognise a place. Try again, or choose from the list.');
+  };
+  rec.onerror = function(ev){
+    if(ev.error === 'not-allowed' || ev.error === 'service-not-allowed')
+      setStatus('Microphone or speech recognition is switched off for this page. Please choose from the list.');
+    else setStatus('Sorry, I did not catch that. Try again, or choose from the list.');
+  };
+  try{ rec.start(); }catch(e){ setStatus('Could not start listening. Please choose from the list.'); }
+}
+
+/* ---------- 6. Little schematic map (decorative; text carries the info) ---------- */
+function drawMap(path){
+  var NS = 'http://www.w3.org/2000/svg';
+  function s(tag, attrs, text){
+    var e = document.createElementNS(NS, tag);
+    for(var k in attrs) e.setAttribute(k, attrs[k]);
+    if(text) e.textContent = text;
+    return e;
+  }
+  var svg = s('svg', { viewBox:'0 0 100 100', 'class':'map', 'aria-hidden':'true', focusable:'false' });
+  var onRoute = {}, onNode = {};
+  if(path){
+    for(var i = 0; i < path.length - 1; i++){ onRoute[path[i] + '>' + path[i+1]] = true; onRoute[path[i+1] + '>' + path[i]] = true; }
+    path.forEach(function(p){ onNode[p] = true; });
+  }
+  LINKS.forEach(function(l){
+    var A = NODES[l.a], B = NODES[l.b];
+    svg.appendChild(s('line', { x1:A.x, y1:A.y, x2:B.x, y2:B.y,
+      'class':'link' + (onRoute[l.a + '>' + l.b] ? ' route' : '') }));
+  });
+  var last = path ? path[path.length - 1] : null;
+  Object.keys(NODES).forEach(function(id){
+    var n = NODES[id];
+    var cls = 'node' + (onNode[id] ? ' route' : '') + (id === state.here ? ' here' : '') + (id === last ? ' dest' : '');
+    svg.appendChild(s('circle', { cx:n.x, cy:n.y, r:(id === state.here || id === last) ? 4 : 3, 'class':cls }));
+    var lx = n.x, ly = n.y, anchor = 'middle';
+    if(n.lab === 'b'){ ly = n.y + 8; }
+    else if(n.lab === 't'){ ly = n.y - 6; }
+    else if(n.lab === 'l'){ lx = n.x - 6; ly = n.y + 1.3; anchor = 'end'; }
+    else { lx = n.x + 6; ly = n.y + 1.3; anchor = 'start'; }
+    svg.appendChild(s('text', { x:lx, y:ly, 'text-anchor':anchor, 'class':'lbl' }, n.short));
+  });
+  return svg;
+}
+
+/* ---------- 7. Views ---------- */
+function setTitle(t){ document.title = 'FindMyWay: ' + t; }
+
+function viewStart(){
+  var text = 'Tap a checkpoint tag to begin. Hold the top edge of your iPhone against a FindMyWay tag.';
+  setTitle('tap a tag to begin');
+  app.appendChild(h('section', { 'class':'card' },
+    h('h1', null, 'Tap a checkpoint tag to begin'),
+    h('p', { 'class':'big' }, 'Hold the top edge of your iPhone against a FindMyWay tag.'),
+    h('p', { 'class':'muted' }, 'Tags are at hand height beside door frames and at the start of handrails, each with a raised dot next to it.')
+  ));
+  announce(text);
+}
+
+function viewPick(){
+  var here = NODES[state.here];
+  setTitle('choose where to go');
+  var status = h('p', { id:'voiceStatus', role:'status', 'aria-live':'polite', 'class':'muted' });
+  function setStatus(t){ status.textContent = t; }
+  var list = h('ul', { 'class':'choices' });
+  Object.keys(NODES).forEach(function(id){
+    var n = NODES[id];
+    if(!n.dest || id === state.here || isClosed(id)) return;
+    list.appendChild(h('li', null, h('button', { type:'button', 'class':'choice', onclick:function(){ chooseDest(id); } }, n.name)));
+  });
+  var card = h('section', { 'class':'card' },
+    h('p', { 'class':'eyebrow' }, 'Step 1 of 2'),
+    h('h1', null, 'You are at ' + here.name),
+    h('p', { 'class':'big' }, 'Where do you want to go?')
+  );
+  if(isClosed(state.here)) card.appendChild(h('p', { 'class':'muted' }, 'Note: this checkpoint is marked out of service.'));
+  if(SR){
+    card.appendChild(h('div', { 'class':'row' },
+      h('button', { type:'button', onclick:function(){ listen(setStatus); } }, 'Say your destination')));
+    card.appendChild(status);
+  }
+  card.appendChild(h('h2', null, 'Or choose from the list'));
+  card.appendChild(list);
+  app.appendChild(card);
+  announce('You are at ' + here.name + '. Where do you want to go? Choose a destination from the list.');
+}
+
+function viewArrived(){
+  var n = NODES[state.dest];
+  setTitle('arrived');
+  app.appendChild(h('section', { 'class':'card' },
+    h('h1', null, 'You have arrived'),
+    h('p', { 'class':'big' }, 'You are at ' + n.name + '.'),
+    h('div', { 'class':'row' }, h('button', { type:'button', onclick:clearDest }, 'Choose a new destination'))
+  ));
+  announce('You have arrived at ' + n.name + '.');
+}
+
+function viewNoRoute(){
+  var a = NODES[state.here], b = NODES[state.dest];
+  setTitle('no route');
+  app.appendChild(h('section', { 'class':'card' },
+    h('h1', null, 'No open route right now'),
+    h('p', { 'class':'big' }, 'There is no open route from ' + a.name + ' to ' + b.name + '. A checkpoint on the way may be out of service.'),
+    h('div', { 'class':'row' }, h('button', { type:'button', onclick:clearDest }, 'Choose a different destination'))
+  ));
+  announce('There is no open route from ' + a.name + ' to ' + b.name + '. Choose a different destination.');
+}
+
+function viewDirections(path){
+  var here = NODES[state.here], dest = NODES[state.dest];
+  var steps = routeSteps(path), first = steps[0];
+  var total = steps.reduce(function(s, x){ return s + x.m; }, 0);
+  var tail = (first.to === state.dest)
+    ? 'That is your destination: ' + dest.name + '.'
+    : 'The next tag is ' + NODES[first.to].tag + '.';
+  var spoken = 'You are at ' + here.name + '. ' + first.say + ' ' + tail;
+  setTitle(first.say);
+  var helpBox = h('div', { id:'helpBox', 'class':'help' });
+
+  var fullList = h('ol', { 'class':'steps' });
+  steps.forEach(function(st){
+    fullList.appendChild(h('li', null,
+      h('strong', null, NODES[st.from].name + ' to ' + NODES[st.to].name + '. '), st.say));
+  });
+
+  app.appendChild(h('section', { 'class':'card' },
+    h('p', { 'class':'eyebrow' }, 'Going to ' + dest.name),
+    h('h1', null, 'You are at ' + here.name),
+    h('p', { 'class':'big' }, first.say),
+    h('p', null, tail),
+    h('p', { 'class':'muted' }, steps.length + (steps.length === 1 ? ' step' : ' steps') + ' to go, about ' + total + ' metres.'),
+    h('div', { 'class':'row' },
+      h('button', { type:'button', onclick:function(){ announce(spoken); } }, 'Repeat'),
+      h('button', { type:'button', 'class':'secondary', onclick:function(){ showHelp(here, helpBox); } }, "I can't find it"),
+      h('button', { type:'button', 'class':'secondary', onclick:function(){ speak(spoken); } }, 'Read aloud without a screen reader'),
+      h('button', { type:'button', 'class':'secondary', onclick:clearDest }, 'Change destination')),
+    helpBox,
+    h('details', null,
+      h('summary', null, 'Full route'),
+      fullList),
+    h('figure', null,
+      drawMap(path),
+      h('figcaption', null, 'Route map. Filled dot: you are here. Orange dot: destination.'))
+  ));
+  announce(spoken);
+}
+
+function render(){
+  app.textContent = '';
+  if(!state.here || !NODES[state.here]) return viewStart();
+  if(!state.dest || !NODES[state.dest] || !NODES[state.dest].dest || isClosed(state.dest)) return viewPick();
+  if(state.here === state.dest) return viewArrived();
+  var path = findRoute(state.here, state.dest);
+  if(!path) return viewNoRoute();
+  return viewDirections(path);
+}
+
+/* ---------- 8. Wire up ---------- */
+document.getElementById('place').textContent = CONFIG.name;
+
+var testSel = document.getElementById('testTag');
+Object.keys(NODES).forEach(function(id){
+  testSel.appendChild(h('option', { value:id }, NODES[id].name + ' (' + id + ')'));
+});
+document.getElementById('testGo').addEventListener('click', function(){
+  state.here = testSel.value;
+  try{ history.replaceState(null, '', '?here=' + state.here); }catch(e){}
+  render();
+});
+
+function registerOffline(){
+  var el = document.getElementById('offlineStatus');
+  if(!('serviceWorker' in navigator)){ el.textContent = 'Offline copy: not supported in this browser.'; return; }
+  navigator.serviceWorker.register('sw.js')
+    .then(function(){ return navigator.serviceWorker.ready; })
+    .then(function(){ el.textContent = 'Offline copy: saved on this phone. This page now opens without signal.'; })
+    .catch(function(){ el.textContent = 'Offline copy: could not be saved (needs https).'; });
+}
+
+window.__fmw = { findRoute: findRoute, routeSteps: routeSteps, NODES: NODES };
+render();
+registerOffline();
+
+})();
+</script>
+</body>
+</html>
